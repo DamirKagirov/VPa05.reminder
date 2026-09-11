@@ -25,7 +25,7 @@ class Database:
         return conn
 
     def init_db(self):
-        """Создание БД и таблицы при первом запуске."""
+        """Создание таблицы при первом запуске."""
         with self.get_connection() as conn:
             conn.execute(
                 """
@@ -43,7 +43,9 @@ class Database:
             conn.commit()
 
     def add_reminder(self, title, description, remind_at):
-        created_at = datetime.now().isoformat(timespec="seconds")
+        created_at = datetime.now().isoformat(
+            timespec="seconds"
+        )
 
         with self.get_connection() as conn:
             cursor = conn.execute(
@@ -70,6 +72,83 @@ class Database:
             conn.commit()
 
             return cursor.lastrowid
+
+    def update_reminder(
+        self,
+        reminder_id,
+        title,
+        description,
+        remind_at,
+    ):
+        """
+        Изменяет напоминание.
+
+        После изменения времени уведомление считается
+        не показанным и напоминание возвращается в статус
+        'Ожидает'.
+        """
+
+        with self.get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE reminders
+                SET
+                    title = ?,
+                    description = ?,
+                    remind_at = ?,
+                    status = 'Ожидает',
+                    notified = 0
+                WHERE id = ?
+                """,
+                (
+                    title,
+                    description,
+                    remind_at,
+                    reminder_id,
+                ),
+            )
+
+            conn.commit()
+
+    def postpone_reminder(
+        self,
+        reminder_id,
+        minutes,
+    ):
+        """
+        Переносит напоминание на указанное количество минут
+        от текущего момента.
+        """
+
+        new_time = datetime.now()
+
+        from datetime import timedelta
+
+        new_time += timedelta(
+            minutes=minutes
+        )
+
+        with self.get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE reminders
+                SET
+                    remind_at = ?,
+                    status = 'Ожидает',
+                    notified = 0
+                WHERE id = ?
+                """,
+                (
+                    new_time.isoformat(
+                        timespec="seconds"
+                    ),
+                    reminder_id,
+                ),
+            )
+
+            conn.commit()
+
+        return new_time
 
     def delete_reminder(self, reminder_id):
         with self.get_connection() as conn:
@@ -116,6 +195,19 @@ class Database:
             )
 
             conn.commit()
+
+    def get_reminder(self, reminder_id):
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT *
+                FROM reminders
+                WHERE id = ?
+                """,
+                (reminder_id,),
+            )
+
+            return cursor.fetchone()
 
     def get_all(self, status=None):
         with self.get_connection() as conn:
@@ -168,7 +260,8 @@ class Database:
 
     def get_due_reminders(self):
         """
-        Возвращает напоминания, для которых наступило время.
+        Возвращает напоминания, время которых наступило,
+        но уведомление ещё не показывалось.
         """
 
         now = datetime.now().isoformat(
@@ -189,4 +282,3 @@ class Database:
             )
 
             return cursor.fetchall()
-        
